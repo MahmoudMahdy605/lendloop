@@ -1,0 +1,203 @@
+{
+  "name": "LendLoop - Request notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lendloop-loan-event",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "a1f1c0de-0001-4000-8000-000000000001",
+      "name": "Loan event webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "lendloop-loan-event"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify the HMAC signature Convex sends (see convex/lib/signing.ts).\n// signature = sha256=hex(HMAC(secret, `${timestamp}.${rawBody}`)); reject if older than 5 minutes.\nconst crypto = require('crypto');\nconst secret = $env.LENDLOOP_OUTBOUND_SECRET;\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst ts = headers['x-lendloop-timestamp'];\nconst sig = headers['x-lendloop-signature'] || '';\nconst raw = item.binary && item.binary.data\n  ? Buffer.from(item.binary.data.data, 'base64').toString('utf8')\n  : JSON.stringify(item.json.body);\n\nlet valid = false;\nif (secret && ts && Math.abs(Date.now() / 1000 - Number(ts)) <= 300) {\n  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(`${ts}.${raw}`).digest('hex');\n  const a = Buffer.from(expected);\n  const b = Buffer.from(sig);\n  valid = a.length === b.length && crypto.timingSafeEqual(a, b);\n}\n\n// Only pass on the fields the notification needs.\nconst body = valid ? JSON.parse(raw) : {};\nreturn [{ json: {\n  valid,\n  eventKey: body.eventKey,\n  event: body.event,\n  toolName: body.toolName,\n  startDate: body.startDate,\n  endDate: body.endDate,\n  recipientName: body.recipient && body.recipient.name,\n  recipientEmail: body.recipient && body.recipient.email,\n} }];"
+      },
+      "id": "a1f1c0de-0001-4000-8000-000000000002",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c0nd-0001",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1f1c0de-0001-4000-8000-000000000003",
+      "name": "Signature valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "dedupeValue": "={{ $json.eventKey }}",
+        "options": {}
+      },
+      "id": "a1f1c0de-0001-4000-8000-000000000004",
+      "name": "Skip already-handled events",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mock notification: logged to the execution, no real email is sent.\n// Swap this node for Send Email / Slack / Discord in production.\nconst subjects = {\n  'loan.requested': (j) => `New request to borrow your ${j.toolName}`,\n  'loan.approved': (j) => `Your request for ${j.toolName} was approved`,\n  'loan.declined': (j) => `Your request for ${j.toolName} was declined`,\n  'loan.returned': (j) => `Thanks for returning ${j.toolName}`,\n};\nreturn $input.all().map((item) => {\n  const j = item.json;\n  const subject = (subjects[j.event] || (() => `LendLoop update about ${j.toolName}`))(j);\n  const message = `Hi ${j.recipientName}, ${subject} (${j.startDate} to ${j.endDate}).`;\n  console.log(`[LendLoop mock notification] to=${j.recipientEmail} subject=\"${subject}\"`);\n  return { json: { eventKey: j.eventKey, to: j.recipientEmail, subject, message, notifiedAt: new Date().toISOString() } };\n});"
+      },
+      "id": "a1f1c0de-0001-4000-8000-000000000005",
+      "name": "Notify user (mock)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1f1c0de-0001-4000-8000-000000000006",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"invalid signature\" } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "a1f1c0de-0001-4000-8000-000000000007",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Loan event webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Signature valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature valid?": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200": {
+      "main": [
+        [
+          {
+            "node": "Skip already-handled events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip already-handled events": {
+      "main": [
+        [
+          {
+            "node": "Notify user (mock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "lendloopErrorWf0"
+  },
+  "pinData": {},
+  "id": "lendloopNotifyWf",
+  "active": true
+}

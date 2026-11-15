@@ -1,0 +1,33 @@
+services:
+  # One-shot: imports the workflow JSON files into n8n's database, then exits.
+  n8n-import:
+    image: docker.n8n.io/n8nio/n8n:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["n8n import:workflow --separate --input=/workflows && n8n publish:workflow --id=lendloopNotifyWf && n8n publish:workflow --id=lendloopReminder"]
+    env_file: .env.n8n
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    depends_on:
+      n8n-import:
+        condition: service_completed_successfully
+    ports:
+      - "5678:5678"
+    env_file: .env.n8n
+    environment:
+      # Code nodes need Node's crypto module for HMAC signing/verification.
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      # Code/HTTP nodes read secrets from env vars ($env.*); they are never stored in workflow JSON.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      GENERIC_TIMEZONE: Asia/Muscat
+    volumes:
+      - n8n_data:/home/node/.n8n
+    # Lets the container reach a Convex dev backend running on the host (localhost:3211).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  n8n_data:
