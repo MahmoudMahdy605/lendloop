@@ -118,7 +118,14 @@ function BorrowForm({ toolId }: { toolId: Id<"tools"> }) {
   const [startDate, setStart] = useState("");
   const [endDate, setEnd] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
-  if (!open) return <button className={`${btn} mt-3 bg-emerald-700 text-white`} onClick={() => setOpen(true)}>Request to borrow</button>;
+  if (!open) {
+    return (
+      <div className="mt-3 flex items-center gap-3">
+        <button className={`${btn} bg-emerald-700 text-white`} onClick={() => { setMsg(null); setOpen(true); }}>Request to borrow</button>
+        {msg && <span className="text-sm text-emerald-700">{msg}</span>}
+      </div>
+    );
+  }
   return (
     <form
       className="mt-3 flex flex-wrap items-end gap-2"

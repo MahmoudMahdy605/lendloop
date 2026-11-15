@@ -20,7 +20,13 @@ npm install
 
 1. Create an application at https://dashboard.clerk.com.
 2. In Clerk, enable the **Convex integration** (Configure → Integrations → Convex). This creates the `convex` JWT template that Convex validates. Copy the **Frontend API URL** it shows (the issuer, e.g. `https://xxx.clerk.accounts.dev`).
-3. Put the API keys in `.env.local`:
+3. In Clerk → **Sessions → Customize session token**, add the claims Convex reads for display name and email (keep the managed `aud` claim):
+
+```json
+{ "email": "{{user.primary_email_address}}", "name": "{{user.full_name}}" }
+```
+
+4. Put the API keys in `.env.local`:
 
 ```bash
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
